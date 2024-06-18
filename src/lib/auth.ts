@@ -1,4 +1,4 @@
-import NextAuth from "next-auth";
+import NextAuth, { AuthError, CredentialsSignin } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import crypto from "crypto";
 import { db } from "@/lib/db";
@@ -54,7 +54,7 @@ async function getUserFromDb(
     .select()
     .from(schema.users)
     .where(eq(schema.users.email, email));
-  if (!users) {
+  if (!users || users.length === 0) {
     throw new Error(`User with email "${email}" not found`);
   } else if (users.length > 1) {
     throw new Error(`Multiple users with email "${email}" found`);
@@ -66,7 +66,7 @@ async function getUserFromDb(
     .select()
     .from(schema.passwords)
     .where(eq(schema.passwords.userId, user.id));
-  if (!passwords) {
+  if (!passwords || passwords.length === 0) {
     throw new Error(`Password for user with id "${user.id}" not found`);
   } else if (passwords.length > 1) {
     throw new Error(`Multiple passwords for user with id "${user.id}" found`);
@@ -87,6 +87,16 @@ async function getUserFromDb(
   }
 }
 
+// See https://github.com/nextauthjs/next-auth/issues/9900.
+class InvalidCredentials extends AuthError {
+  public readonly kind = "signIn";
+
+  constructor() {
+    super("Invalid credentials");
+    this.type = "CredentialsSignin";
+  }
+}
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
   basePath: "/auth",
   providers: [
@@ -94,28 +104,24 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       // You can specify which fields should be submitted, by adding keys to the `credentials` object.
       // e.g. domain, username, password, 2FA token, etc.
       credentials: {
-        email: {},
-        password: {},
+        email: { label: "Email" },
+        password: { label: "Password", type: "password" },
       },
       authorize: async (credentials) => {
         if (typeof credentials.email !== "string") {
-          throw new Error("Email must be a string");
+          throw new InvalidCredentials();
         }
 
         if (typeof credentials.password !== "string") {
-          throw new Error("Password must be a string");
+          throw new InvalidCredentials();
         }
 
         // logic to verify if user exists
-        const user = await getUserFromDb(
-          credentials.email,
-          credentials.password
-        );
-
-        if (!user) {
-          // No user found, so this is their first attempt to login
-          // meaning this is also the place you could do registration
-          throw new Error("User not found.");
+        let user;
+        try {
+          user = await getUserFromDb(credentials.email, credentials.password);
+        } catch (err: unknown) {
+          throw new InvalidCredentials();
         }
 
         // return user object with the their profile data
