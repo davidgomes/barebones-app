@@ -1,4 +1,4 @@
-import NextAuth, { AuthError, CredentialsSignin } from "next-auth";
+import NextAuth, { AuthError } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import crypto from "crypto";
 import { db } from "@/lib/db";
